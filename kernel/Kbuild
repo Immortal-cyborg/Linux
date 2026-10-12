@@ -1,0 +1,3 @@
+obj-m := myfs.o
+myfs-y := main.o super.o layout.o io.o dir.o file.o ioctl.o
+ccflags-y := -I$(src)/../include
