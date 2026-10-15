@@ -6,6 +6,7 @@
 
 #include "myfs.h"
 
+// GET_META: CRC-32 каждого файла в массив программы
 static int myfs_get_meta(struct myfs_info *fsi, struct myfs_meta_req __user *ureq)
 {
 	struct myfs_file_meta __user *out;
@@ -43,6 +44,7 @@ static int myfs_get_meta(struct myfs_info *fsi, struct myfs_meta_req __user *ure
 	return ret;
 }
 
+// GET_SECTOR_MAP: где на диске лежит файл с данным именем
 static int myfs_get_sector_map(struct myfs_info *fsi,
 			       struct myfs_sector_map __user *umap)
 {
@@ -62,6 +64,7 @@ static int myfs_get_sector_map(struct myfs_info *fsi,
 	return copy_to_user(umap, &map, sizeof(map)) ? -EFAULT : 0;
 }
 
+// Общий обработчик ioctl: проверяет права и выполняет команду под замком
 long myfs_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct myfs_info *fsi = MYFS_INFO(file_inode(file)->i_sb);

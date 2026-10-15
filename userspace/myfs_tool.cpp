@@ -22,17 +22,19 @@ namespace fs = std::filesystem;
 
 const char *const kDefaultMount = "/mnt";
 
+// Исключение с текстом текущей ошибки errno
 std::system_error sys_error(const std::string &what)
 {
 	return std::system_error(errno, std::generic_category(), what);
 }
 
+// Файловый дескриптор, который сам закрывается
 class Fd {
 public:
 	Fd(const std::string &path, int flags) : fd_(::open(path.c_str(), flags))
 	{
 		if (fd_ < 0)
-			throw sys_error("open " + path);
+			throw sys_error("не удалось открыть " + path);
 	}
 	~Fd() { ::close(fd_); }
 	Fd(const Fd &) = delete;
@@ -43,6 +45,7 @@ private:
 	int fd_;
 };
 
+// Открывает каталог ФС и вызывает ioctl
 void myfs_ioctl(const std::string &mnt, unsigned long cmd, void *arg, const char *name)
 {
 	Fd dir(mnt, O_RDONLY | O_DIRECTORY);
@@ -50,6 +53,7 @@ void myfs_ioctl(const std::string &mnt, unsigned long cmd, void *arg, const char
 		throw sys_error(name);
 }
 
+// Все файлы каталога по порядку
 std::vector<fs::path> list_files(const std::string &mnt)
 {
 	std::vector<fs::path> files;
@@ -60,11 +64,12 @@ std::vector<fs::path> list_files(const std::string &mnt)
 	return files;
 }
 
+// Тест из задания: случайное число в каждый файл, затем чтение и сверка
 int cmd_test(const std::string &mnt)
 {
 	auto files = list_files(mnt);
 	if (files.empty()) {
-		std::cerr << "no files in " << mnt << "\n";
+		std::cerr << "нет файлов в " << mnt << "\n";
 		return 1;
 	}
 
@@ -77,8 +82,8 @@ int cmd_test(const std::string &mnt)
 		Fd fd(path, O_WRONLY);
 		ssize_t n = ::pwrite(fd.get(), text.data(), text.size(), 0);
 		if (n != (ssize_t)text.size()) {
-			std::cerr << path.filename().string() << ": write: "
-				  << (n < 0 ? std::strerror(errno) : "short write") << "\n";
+			std::cerr << path.filename().string() << ": ошибка записи: "
+				  << (n < 0 ? std::strerror(errno) : "записано не всё") << "\n";
 			++errors;
 		}
 		written.push_back(text);
@@ -89,39 +94,43 @@ int cmd_test(const std::string &mnt)
 		Fd fd(files[i], O_RDONLY);
 		ssize_t n = ::pread(fd.get(), text.data(), text.size(), 0);
 		if (n != (ssize_t)text.size() || text != written[i]) {
-			std::cerr << files[i].filename().string() << ": read back "
-				  << (n < 0 ? std::strerror(errno) : "different data") << "\n";
+			std::cerr << files[i].filename().string() << ": ошибка чтения: "
+				  << (n < 0 ? std::strerror(errno) : "прочитаны другие данные") << "\n";
 			++errors;
 		}
 	}
 
-	std::cout << files.size() << " files written and read back, " << errors << " errors\n";
+	std::cout << "Файлов записано и прочитано: " << files.size()
+		  << ", ошибок: " << errors << "\n";
 	return errors ? 1 : 0;
 }
 
+// Обнулить все файлы
 int cmd_zero(const std::string &mnt)
 {
 	myfs_ioctl(mnt, MYFS_IOC_ZERO_ALL, nullptr, "MYFS_IOC_ZERO_ALL");
-	std::cout << "all files zeroed\n";
+	std::cout << "все файлы обнулены\n";
 	return 0;
 }
 
+// Стереть ФС после подтверждения
 int cmd_erase(const std::string &mnt, bool confirmed)
 {
 	if (!confirmed) {
-		std::cout << "Erase the filesystem mounted at " << mnt << "? Type yes: ";
+		std::cout << "Стереть файловую систему в " << mnt << "? Введите yes: ";
 		std::string answer;
 		std::cin >> answer;
 		if (answer != "yes") {
-			std::cout << "aborted\n";
+			std::cout << "отменено\n";
 			return 1;
 		}
 	}
 	myfs_ioctl(mnt, MYFS_IOC_ERASE_FS, nullptr, "MYFS_IOC_ERASE_FS");
-	std::cout << "filesystem erased; it cannot be mounted again until recreated with format=1\n";
+	std::cout << "файловая система стёрта; смонтировать её снова можно только после format=1\n";
 	return 0;
 }
 
+// Таблица CRC-32 всех файлов
 int cmd_metadata(const std::string &mnt)
 {
 	myfs_meta_req req{};
@@ -132,7 +141,7 @@ int cmd_metadata(const std::string &mnt)
 	myfs_ioctl(mnt, MYFS_IOC_GET_META, &req, "MYFS_IOC_GET_META");
 	meta.resize(std::min<size_t>(meta.size(), req.count));
 
-	std::cout << "index  name        crc32\n";
+	std::cout << "номер  имя         crc32\n";
 	for (const auto &m : meta)
 		std::cout << std::setw(5) << m.index << "  " << std::left << std::setw(10) << m.name
 			  << std::right << "  0x" << std::hex << std::setw(8) << std::setfill('0')
@@ -140,11 +149,12 @@ int cmd_metadata(const std::string &mnt)
 	return 0;
 }
 
+// Секторы, которые занимает файл
 int cmd_sectormap(const std::string &name, const std::string &mnt)
 {
 	myfs_sector_map map{};
 	if (name.size() >= sizeof(map.name)) {
-		std::cerr << "file name too long: " << name << "\n";
+		std::cerr << "слишком длинное имя файла: " << name << "\n";
 		return 1;
 	}
 	std::memcpy(map.name, name.c_str(), name.size() + 1);
@@ -152,25 +162,27 @@ int cmd_sectormap(const std::string &name, const std::string &mnt)
 
 	uint64_t first_byte = uint64_t(map.start) * map.sector_size;
 	uint64_t last_byte = first_byte + uint64_t(map.count) * map.sector_size - 1;
-	std::cout << name << ": index " << map.index << ", " << map.count << " sectors of "
-		  << map.sector_size << " bytes\n"
-		  << "  sectors " << map.start << "-" << map.start + map.count - 1
-		  << "  (bytes " << first_byte << "-" << last_byte << " of the device)\n";
+	std::cout << name << ": номер " << map.index << ", секторов " << map.count << " по "
+		  << map.sector_size << " байт\n"
+		  << "  секторы " << map.start << "-" << map.start + map.count - 1
+		  << "  (байты " << first_byte << "-" << last_byte << " на устройстве)\n";
 	return 0;
 }
 
+// Справка по командам
 void usage(const char *prog)
 {
-	std::cerr << "usage: " << prog << " test [mnt]\n"
-		  << "       " << prog << " zero [mnt]\n"
-		  << "       " << prog << " erase [-y] [mnt]\n"
-		  << "       " << prog << " metadata [mnt]\n"
-		  << "       " << prog << " sectormap <file> [mnt]\n"
-		  << "mnt defaults to " << kDefaultMount << "\n";
+	std::cerr << "использование: " << prog << " test [mnt]\n"
+		  << "               " << prog << " zero [mnt]\n"
+		  << "               " << prog << " erase [-y] [mnt]\n"
+		  << "               " << prog << " metadata [mnt]\n"
+		  << "               " << prog << " sectormap <файл> [mnt]\n"
+		  << "mnt по умолчанию " << kDefaultMount << "\n";
 }
 
 }
 
+// Разбор аргументов и запуск команды
 int main(int argc, char *argv[])
 {
 	std::vector<std::string> args(argv + 1, argv + argc);
@@ -214,7 +226,7 @@ int main(int argc, char *argv[])
 		if (cmd == "sectormap")
 			return cmd_sectormap(file, mnt);
 	} catch (const std::exception &e) {
-		std::cerr << "error: " << e.what() << "\n";
+		std::cerr << "ошибка: " << e.what() << "\n";
 		return 1;
 	}
 	usage(argv[0]);

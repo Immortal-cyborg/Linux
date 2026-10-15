@@ -5,6 +5,7 @@
 
 #include "myfs.h"
 
+// Раскладывает файлы по участкам между суперблоками и возвращает их число
 u32 myfs_layout(const struct myfs_super_block *sb, struct myfs_file *files)
 {
 	u32 lo = min(sb->sb_offset_1, sb->sb_offset_2);
@@ -31,6 +32,7 @@ u32 myfs_layout(const struct myfs_super_block *sb, struct myfs_file *files)
 	return n;
 }
 
+// Проверяет, что суперблок подходит к этому диску
 int myfs_check_geometry(const struct myfs_info *fsi,
 			const struct myfs_super_block *sb)
 {
@@ -39,35 +41,35 @@ int myfs_check_geometry(const struct myfs_info *fsi,
 	unsigned int name_len;
 
 	if (sb->sector_size != fsi->sector_size) {
-		pr_err("filesystem is for %u-byte sectors, device has %u\n",
+		pr_err("ФС создана для секторов по %u байт, у устройства %u\n",
 		       sb->sector_size, fsi->sector_size);
 		return -EINVAL;
 	}
 	if (sb->total_sectors > dev_sectors) {
-		pr_err("filesystem has %u sectors, device only %llu\n",
+		pr_err("в ФС %u секторов, на устройстве только %llu\n",
 		       sb->total_sectors, dev_sectors);
 		return -EINVAL;
 	}
 	if (sb->sb_offset_1 == sb->sb_offset_2 ||
 	    sb->sb_offset_1 >= sb->total_sectors ||
 	    sb->sb_offset_2 >= sb->total_sectors) {
-		pr_err("superblock sectors %u and %u must differ and be below %u\n",
+		pr_err("секторы суперблоков %u и %u должны различаться и быть меньше %u\n",
 		       sb->sb_offset_1, sb->sb_offset_2, sb->total_sectors);
 		return -EINVAL;
 	}
 	if (!sb->file_sectors || file_bytes > MYFS_MAX_FILE_BYTES) {
-		pr_err("file of %u sectors x %u bytes, allowed 1 sector .. %lu bytes\n",
+		pr_err("файл из %u секторов по %u байт, допустимо от 1 сектора до %lu байт\n",
 		       sb->file_sectors, fsi->sector_size, MYFS_MAX_FILE_BYTES);
 		return -EINVAL;
 	}
 	if (!sb->num_files || sb->num_files != myfs_layout(sb, NULL)) {
-		pr_err("%u files do not match the layout of the device\n",
+		pr_err("число файлов %u не совпадает с раскладкой устройства\n",
 		       sb->num_files);
 		return -EINVAL;
 	}
 	name_len = snprintf(NULL, 0, MYFS_NAME_FMT, sb->num_files - 1);
 	if (sb->max_name_len > MYFS_NAME_MAX || name_len > sb->max_name_len) {
-		pr_err("file names need %u chars, max_name_len is %u\n",
+		pr_err("именам файлов нужно %u символов, а max_name_len = %u\n",
 		       name_len, sb->max_name_len);
 		return -EINVAL;
 	}

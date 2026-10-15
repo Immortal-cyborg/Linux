@@ -6,6 +6,7 @@
 
 #include "myfs.h"
 
+// Читает или пишет len байт начиная с сектора sector одним bio и ждёт диск
 int myfs_rw(struct myfs_info *fsi, u32 sector, void *buf, size_t len,
 	    blk_opf_t opf)
 {
@@ -34,11 +35,13 @@ int myfs_rw(struct myfs_info *fsi, u32 sector, void *buf, size_t len,
 	return ret;
 }
 
+// Читает или пишет файл целиком
 int myfs_file_rw(struct myfs_info *fsi, u32 idx, void *buf, blk_opf_t opf)
 {
 	return myfs_rw(fsi, fsi->files[idx].start, buf, myfs_file_bytes(fsi), opf);
 }
 
+// Записывает нули во все файлы
 int myfs_zero_files(struct myfs_info *fsi)
 {
 	void *zero = kzalloc(myfs_file_bytes(fsi), GFP_KERNEL);
@@ -53,6 +56,7 @@ int myfs_zero_files(struct myfs_info *fsi)
 	return ret;
 }
 
+// Стандартный CRC-32, такой же, как zlib.crc32
 u32 myfs_crc32(const void *buf, size_t len)
 {
 	return ~crc32_le(~0U, buf, len);

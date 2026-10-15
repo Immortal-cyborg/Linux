@@ -7,11 +7,13 @@
 
 #include "myfs.h"
 
+// CRC-32 суперблока без самого поля checksum
 static u32 myfs_sb_csum(const struct myfs_super_block *sb)
 {
 	return myfs_crc32(sb, offsetof(struct myfs_super_block, checksum));
 }
 
+// Читает суперблок из сектора
 static int myfs_read_sb(struct myfs_info *fsi, u32 sector,
 			struct myfs_super_block *sb)
 {
@@ -27,6 +29,7 @@ static int myfs_read_sb(struct myfs_info *fsi, u32 sector,
 	return ret;
 }
 
+// Пишет суперблок в сектор мимо кэша диска
 static int myfs_write_sb(struct myfs_info *fsi, u32 sector,
 			 const struct myfs_super_block *sb)
 {
@@ -43,23 +46,25 @@ static int myfs_write_sb(struct myfs_info *fsi, u32 sector,
 	return ret;
 }
 
+// Проверяет одну копию суперблока
 static bool myfs_sb_valid(const struct myfs_info *fsi,
 			  const struct myfs_super_block *sb)
 {
 	if (sb->magic != MYFS_MAGIC || sb->checksum != myfs_sb_csum(sb))
 		return false;
 	if (sb->version != MYFS_VERSION) {
-		pr_err("unsupported format version %u\n", sb->version);
+		pr_err("неподдерживаемая версия формата %u\n", sb->version);
 		return false;
 	}
 	if (sb->sb_offset_1 != sb_offset_1 || sb->sb_offset_2 != sb_offset_2) {
-		pr_err("superblocks are at sectors %u and %u, load the module with these sb_offset_1/sb_offset_2\n",
+		pr_err("суперблоки лежат в секторах %u и %u, загрузите модуль с такими sb_offset_1/sb_offset_2\n",
 		       sb->sb_offset_1, sb->sb_offset_2);
 		return false;
 	}
 	return !myfs_check_geometry(fsi, sb);
 }
 
+// Строит в памяти список файлов
 static int myfs_build_files(struct myfs_info *fsi)
 {
 	fsi->files = kvcalloc(fsi->sb.num_files, sizeof(*fsi->files), GFP_KERNEL);
@@ -69,6 +74,7 @@ static int myfs_build_files(struct myfs_info *fsi)
 	return 0;
 }
 
+// При mount читает обе копии, чинит испорченную и строит список файлов
 int myfs_load(struct myfs_info *fsi)
 {
 	struct myfs_super_block *copy;
@@ -81,7 +87,7 @@ int myfs_load(struct myfs_info *fsi)
 	ok1 = !myfs_read_sb(fsi, sb_offset_1, &copy[0]) && myfs_sb_valid(fsi, &copy[0]);
 	ok2 = !myfs_read_sb(fsi, sb_offset_2, &copy[1]) && myfs_sb_valid(fsi, &copy[1]);
 	if (!ok1 && !ok2) {
-		pr_err("both superblocks are invalid, refusing to mount (create a filesystem with format=1)\n");
+		pr_err("обе копии суперблока испорчены, монтирование отменено (создайте ФС через format=1)\n");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -90,9 +96,9 @@ int myfs_load(struct myfs_info *fsi)
 	if (!ok1 || !ok2 || memcmp(&copy[0], &copy[1], sizeof(*copy))) {
 		u32 bad = ok1 ? sb_offset_2 : sb_offset_1;
 
-		pr_warn("superblock at sector %u is damaged, restoring it\n", bad);
+		pr_warn("суперблок в секторе %u испорчен, восстанавливаю\n", bad);
 		if (myfs_write_sb(fsi, bad, &fsi->sb))
-			pr_warn("could not restore superblock at sector %u\n", bad);
+			pr_warn("не удалось восстановить суперблок в секторе %u\n", bad);
 	}
 	ret = myfs_build_files(fsi);
 out:
@@ -100,6 +106,7 @@ out:
 	return ret;
 }
 
+// Создаёт новую ФС: суперблоки и обнулённые файлы
 int myfs_format(struct myfs_info *fsi)
 {
 	struct myfs_super_block *sb = &fsi->sb;
@@ -107,7 +114,7 @@ int myfs_format(struct myfs_info *fsi)
 	int ret;
 
 	if (dev_sectors > U32_MAX) {
-		pr_err("device has %llu sectors, at most %u supported\n",
+		pr_err("на устройстве %llu секторов, поддерживается не больше %u\n",
 		       dev_sectors, U32_MAX);
 		return -EFBIG;
 	}
@@ -141,15 +148,16 @@ int myfs_format(struct myfs_info *fsi)
 	if (!ret)
 		ret = myfs_write_sb(fsi, sb_offset_2, sb);
 	if (ret) {
-		pr_err("format of /dev/%s failed: %d\n", myfs_dev, ret);
+		pr_err("не удалось отформатировать /dev/%s: %d\n", myfs_dev, ret);
 		return ret;
 	}
 
-	pr_info("created filesystem on /dev/%s: %u files of %u sectors, sector size %u\n",
+	pr_info("создана ФС на /dev/%s: %u файлов по %u секторов, размер сектора %u\n",
 		myfs_dev, sb->num_files, sb->file_sectors, fsi->sector_size);
 	return 0;
 }
 
+// Затирает обе копии суперблока, после этого ФС не монтируется
 int myfs_erase(struct myfs_info *fsi)
 {
 	int ret = myfs_write_sb(fsi, fsi->sb.sb_offset_1, NULL);
@@ -159,6 +167,6 @@ int myfs_erase(struct myfs_info *fsi)
 	if (ret)
 		return ret;
 	WRITE_ONCE(fsi->erased, true);
-	pr_info("filesystem on /dev/%s erased\n", myfs_dev);
+	pr_info("ФС на /dev/%s стёрта\n", myfs_dev);
 	return 0;
 }

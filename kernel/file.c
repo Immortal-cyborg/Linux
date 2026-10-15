@@ -5,11 +5,13 @@
 
 #include "myfs.h"
 
+// Номер файла по номеру inode
 static u32 myfs_index(const struct inode *inode)
 {
 	return inode->i_ino - MYFS_FIRST_FILE_INO;
 }
 
+// Чтение: берём файл с диска целиком и отдаём нужную часть
 static ssize_t myfs_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct inode *inode = file_inode(iocb->ki_filp);
@@ -41,6 +43,7 @@ static ssize_t myfs_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	return count ? count : -EFAULT;
 }
 
+// Запись: читаем файл, накладываем новые байты и пишем его обратно
 static ssize_t myfs_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct inode *inode = file_inode(iocb->ki_filp);
@@ -81,6 +84,7 @@ out_unlock:
 	return ret ? ret : count;
 }
 
+// Обрезка: обнуляет всё после новой длины, размер файла не меняется
 static int myfs_truncate(struct inode *inode, loff_t newsize)
 {
 	struct myfs_info *fsi = MYFS_INFO(inode->i_sb);
@@ -108,6 +112,7 @@ static int myfs_truncate(struct inode *inode, loff_t newsize)
 	return ret;
 }
 
+// Права и владельца менять нельзя, смена размера идёт через обрезку
 static int myfs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,
 			struct iattr *attr)
 {

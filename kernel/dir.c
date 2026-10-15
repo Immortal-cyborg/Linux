@@ -4,6 +4,7 @@
 
 #include "myfs.h"
 
+// Номер файла по имени вида file00024
 int myfs_find_file(const struct myfs_info *fsi, const char *name, u32 *idx)
 {
 	const size_t plen = sizeof(MYFS_NAME_PREFIX) - 1;
@@ -15,6 +16,7 @@ int myfs_find_file(const struct myfs_info *fsi, const char *name, u32 *idx)
 	return 0;
 }
 
+// Список файлов каталога для ls
 static int myfs_readdir(struct file *file, struct dir_context *ctx)
 {
 	struct myfs_info *fsi = MYFS_INFO(file_inode(file)->i_sb);
@@ -34,6 +36,7 @@ static int myfs_readdir(struct file *file, struct dir_context *ctx)
 	return 0;
 }
 
+// Перемотка позиции в каталоге
 static loff_t myfs_dir_llseek(struct file *file, loff_t offset, int whence)
 {
 	struct myfs_info *fsi = MYFS_INFO(file_inode(file)->i_sb);
@@ -42,6 +45,7 @@ static loff_t myfs_dir_llseek(struct file *file, loff_t offset, int whence)
 	return generic_file_llseek_size(file, offset, whence, end, end);
 }
 
+// Ищем файл по имени и создаём для него inode
 static struct dentry *myfs_lookup(struct inode *dir, struct dentry *dentry,
 				  unsigned int flags)
 {
@@ -60,6 +64,7 @@ static struct dentry *myfs_lookup(struct inode *dir, struct dentry *dentry,
 	return d_splice_alias(inode, dentry);
 }
 
+// После erase закэшированные имена файлов становятся недействительными
 static int myfs_d_revalidate(struct dentry *dentry, unsigned int flags)
 {
 	return IS_ROOT(dentry) || !READ_ONCE(MYFS_INFO(dentry->d_sb)->erased);
@@ -81,6 +86,7 @@ static const struct inode_operations myfs_dir_iops = {
 	.lookup		    = myfs_lookup,
 };
 
+// Возвращаем inode по номеру: корневой каталог или файл
 struct inode *myfs_iget(struct super_block *sb, unsigned long ino)
 {
 	struct inode *inode = iget_locked(sb, ino);

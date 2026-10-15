@@ -17,18 +17,19 @@ uint file_sectors = 8;
 static bool format;
 
 module_param(myfs_dev, charp, 0444);
-MODULE_PARM_DESC(myfs_dev, "Block device name without /dev/, e.g. loop0 (default sdb)");
+MODULE_PARM_DESC(myfs_dev, "Имя блочного устройства без /dev/, например loop0 (по умолчанию sdb)");
 module_param(sb_offset_1, uint, 0444);
-MODULE_PARM_DESC(sb_offset_1, "Sector of the primary superblock (default 0)");
+MODULE_PARM_DESC(sb_offset_1, "Сектор основного суперблока (по умолчанию 0)");
 module_param(sb_offset_2, uint, 0444);
-MODULE_PARM_DESC(sb_offset_2, "Sector of the backup superblock (default 1)");
+MODULE_PARM_DESC(sb_offset_2, "Сектор копии суперблока (по умолчанию 1)");
 module_param(max_name_len, uint, 0444);
-MODULE_PARM_DESC(max_name_len, "Max file name length, 9..63 (default 63)");
+MODULE_PARM_DESC(max_name_len, "Максимальная длина имени файла, 9..63 (по умолчанию 63)");
 module_param(file_sectors, uint, 0444);
-MODULE_PARM_DESC(file_sectors, "File size M in sectors, at most 1 MiB per file (default 8)");
+MODULE_PARM_DESC(file_sectors, "Размер файла M в секторах, не больше 1 МиБ (по умолчанию 8)");
 module_param(format, bool, 0444);
-MODULE_PARM_DESC(format, "Create a new filesystem on the device at module load (default 0)");
+MODULE_PARM_DESC(format, "Создать новую ФС на устройстве при загрузке модуля (по умолчанию 0)");
 
+// Открывает диск из параметра myfs_dev в монопольном режиме
 static int myfs_open_dev(struct myfs_info *fsi, void *holder)
 {
 	char path[sizeof("/dev/") + DISK_NAME_LEN];
@@ -38,7 +39,7 @@ static int myfs_open_dev(struct myfs_info *fsi, void *holder)
 	f = bdev_file_open_by_path(path, BLK_OPEN_READ | BLK_OPEN_WRITE,
 				   holder, NULL);
 	if (IS_ERR(f)) {
-		pr_err("cannot open %s: %ld\n", path, PTR_ERR(f));
+		pr_err("не удалось открыть %s: %ld\n", path, PTR_ERR(f));
 		return PTR_ERR(f);
 	}
 	fsi->bdev_file = f;
@@ -47,6 +48,7 @@ static int myfs_open_dev(struct myfs_info *fsi, void *holder)
 	return 0;
 }
 
+// Закрывает диск и освобождает память ФС
 static void myfs_free_info(struct myfs_info *fsi)
 {
 	if (fsi->bdev_file)
@@ -56,9 +58,10 @@ static void myfs_free_info(struct myfs_info *fsi)
 }
 
 static const struct super_operations myfs_sops = {
-	.statfs		= simple_statfs,
+	.statfs	    = simple_statfs,
 };
 
+// Монтирование: читает суперблок и создаёт корневой каталог
 static int myfs_fill_super(struct super_block *sb, struct fs_context *fc)
 {
 	struct myfs_info *fsi;
@@ -93,11 +96,12 @@ static int myfs_fill_super(struct super_block *sb, struct fs_context *fc)
 	if (!sb->s_root)
 		return -ENOMEM;
 
-	pr_info("mounted /dev/%s: %u files of %u sectors, sector size %u\n",
+	pr_info("смонтирована /dev/%s: %u файлов по %u секторов, размер сектора %u\n",
 		myfs_dev, fsi->sb.num_files, fsi->sb.file_sectors, fsi->sector_size);
 	return 0;
 }
 
+// Вход в mount: новый суперблок, диск берётся не из командной строки
 static int myfs_get_tree(struct fs_context *fc)
 {
 	return get_tree_nodev(fc, myfs_fill_super);
@@ -107,12 +111,14 @@ static const struct fs_context_operations myfs_context_ops = {
 	.get_tree	= myfs_get_tree,
 };
 
+// Подключает операции монтирования
 static int myfs_init_fs_context(struct fs_context *fc)
 {
 	fc->ops = &myfs_context_ops;
 	return 0;
 }
 
+// Размонтирование: уборка VFS, затем данных
 static void myfs_kill_sb(struct super_block *sb)
 {
 	struct myfs_info *fsi = MYFS_INFO(sb);
@@ -130,32 +136,34 @@ static struct file_system_type myfs_type = {
 };
 MODULE_ALIAS_FS("myfs");
 
+// Проверяет параметры модуля, которые не зависят от диска
 static int __init myfs_check_params(void)
 {
 	unsigned int min_name_len = snprintf(NULL, 0, MYFS_NAME_FMT, 0);
 
 	if (!*myfs_dev || strchr(myfs_dev, '/') ||
 	    strlen(myfs_dev) >= DISK_NAME_LEN) {
-		pr_err("myfs_dev must be a device name like loop0 (no '/', < %d chars)\n",
+		pr_err("myfs_dev должен быть именем устройства, например loop0 (без '/', короче %d символов)\n",
 		       DISK_NAME_LEN);
 		return -EINVAL;
 	}
 	if (sb_offset_1 == sb_offset_2) {
-		pr_err("sb_offset_1 and sb_offset_2 must differ\n");
+		pr_err("sb_offset_1 и sb_offset_2 должны различаться\n");
 		return -EINVAL;
 	}
 	if (max_name_len < min_name_len || max_name_len > MYFS_NAME_MAX) {
-		pr_err("max_name_len must be in %u..%d\n", min_name_len, MYFS_NAME_MAX);
+		pr_err("max_name_len должен быть в диапазоне %u..%d\n", min_name_len, MYFS_NAME_MAX);
 		return -EINVAL;
 	}
 	if (!file_sectors || file_sectors > MYFS_MAX_FILE_BYTES / SECTOR_SIZE) {
-		pr_err("file_sectors must be in 1..%lu\n",
+		pr_err("file_sectors должен быть в диапазоне 1..%lu\n",
 		       MYFS_MAX_FILE_BYTES / SECTOR_SIZE);
 		return -EINVAL;
 	}
 	return 0;
 }
 
+// Форматирует диск при insmod с format=1
 static int __init myfs_format_dev(void)
 {
 	struct myfs_info *fsi = kzalloc(sizeof(*fsi), GFP_KERNEL);
@@ -170,6 +178,7 @@ static int __init myfs_format_dev(void)
 	return ret;
 }
 
+// insmod: проверка параметров, форматирование и регистрация ФС
 static int __init myfs_init(void)
 {
 	int ret;
@@ -187,6 +196,7 @@ static int __init myfs_init(void)
 	return register_filesystem(&myfs_type);
 }
 
+// rmmod: снимает регистрацию ФС
 static void __exit myfs_exit(void)
 {
 	unregister_filesystem(&myfs_type);
@@ -196,4 +206,4 @@ module_init(myfs_init);
 module_exit(myfs_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Educational filesystem on top of a block device");
+MODULE_DESCRIPTION("Учебная файловая система поверх блочного устройства");
