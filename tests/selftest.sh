@@ -1,5 +1,6 @@
 #!/bin/sh
 set -u
+export LC_ALL=C
 
 DIR=$(cd "$(dirname "$0")/.." && pwd)
 KO=$DIR/kernel/myfs.ko
@@ -128,7 +129,7 @@ t_map() {
 	dd if=/dev/urandom of="$TMP/pattern" bs="$SS" count=$M 2>/dev/null &&
 	dd if="$TMP/pattern" of="$MNT/$f" bs=$((SS * M)) count=1 conv=notrunc 2>/dev/null &&
 	"$TOOL" sectormap "$f" "$MNT" > "$TMP/map" || return 1
-	start=$(awk '$1 == "sectors" { print $2 }' "$TMP/map")
+	start=$(awk '$2 ~ /^[0-9]+-[0-9]+$/ { print $2 }' "$TMP/map")
 	start=${start%-*}
 	[ "$start" -eq $((SB2 + 1)) ] &&
 	umount "$MNT" && raw "$start" $M > "$TMP/raw" &&
